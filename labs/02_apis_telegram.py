@@ -4,14 +4,15 @@
 # ICPSR 2026 — The Social Science Data Pipeline
 # Instructor: Andy Halterman
 #
-# This lab has two halves, matching the chapter: first the front door
-# (APIs — JSON, authentication, pagination, and the modern reality that
-# even open data wants to know who you are), then the platform where the
-# Ukraine war's information environment actually lives (Telegram — channel
-# ecology, metadata, and source criticism with real teeth).
+# Two halves, matching the chapter. First, APIs: how you get structured data
+# (usually JSON) directly from a server instead of parsing it out of HTML,
+# plus authentication, pagination, and the fact that even open data now wants
+# to know who's using it. Then Telegram, which is where most of the specific
+# information about the Ukraine war is: channel ecology, metadata, and source
+# criticism.
 #
 # As always: every required cell runs offline from `data/cached/`. Cells
-# marked **OPTIONAL — live** need network, and sometimes credentials.
+# marked **OPTIONAL -- live** need network, and sometimes credentials.
 
 # %%
 # Setup (same block as every lab)
@@ -44,18 +45,18 @@ os.makedirs(OUTPUTS_DIR, exist_ok=True)
 # %% [markdown]
 # ## Part 1: APIs
 #
-# Part 1 moves at demonstration pace: read and run the worked cells, and
+# Part 1 is demonstration pace: read and run the worked cells, and try to
 # predict each result before you run it. Your hands-on time is Part 2, Telegram.
 #
 # ### 1a. What an API response looks like
 #
-# Yesterday you wrestled HTML written for browsers. An API hands you the
-# data structure directly. Let's hit one with no key, no registration, and
-# direct course relevance: DeepStateMap's territorial-control API — the
-# polygons behind the map a million people check daily.
+# This morning you scraped HTML that was meant for browsers to read. An API
+# hands you the structured data directly. Let's call one that needs no key and
+# no registration, and that's directly relevant to the course: DeepStateMap's
+# territorial-control API, which serves the polygons behind the widely-used map.
 
 # %%
-# OPTIONAL — live network. The cached fallback is two cells down.
+# OPTIONAL -- live network. The cached fallback is two cells down.
 import requests
 
 resp = requests.get(
@@ -64,16 +65,16 @@ resp = requests.get(
     timeout=30,
 )
 resp.raise_for_status()
-raw = resp.json()          # JSON → Python dicts and lists. That's it.
+raw = resp.json()          # parse the JSON into Python dicts and lists
 type(raw), list(raw.keys())
 
 # %% [markdown]
 # Real-world detail #1: the GeoJSON you want is wrapped inside a `"map"`
-# key — every API has these undocumented quirks, and `resp.json()` +
-# poking at `.keys()` is how you find them. Real-world detail #2: this API
-# publishes no documentation and no terms — it *works*, but building a
-# dissertation on an undocumented endpoint is a risk you should price in
-# (the chapter's provenance lesson: snapshot what you depend on).
+# key. Most APIs have these undocumented quirks, and calling `resp.json()`
+# and poking at `.keys()` is how you find them. Real-world detail #2: this
+# API publishes no documentation and no terms of use. It works fine, but
+# relying on an undocumented endpoint for a dissertation is a real risk, so
+# snapshot what you depend on (the chapter's provenance lesson).
 
 # %%
 # Offline fallback: we cached a cleaned snapshot on 2026-06-10
@@ -89,7 +90,8 @@ control["features"][0]["properties"]
 # %% [markdown]
 # ### 1b. Nested JSON → flat dataframe
 #
-# JSON is trees; analysis wants tables. `pd.json_normalize` is the bridge.
+# JSON comes back nested (dicts inside lists inside dicts), but analysis
+# wants a flat table. `pd.json_normalize` does that conversion.
 
 # %%
 import pandas as pd
@@ -106,26 +108,26 @@ n_occupied = features["properties.name"].str.contains("occupied", case=False, na
 print(f"\nFeature names containing 'occupied': {n_occupied}")
 
 # %% [markdown]
-# ### 1c. Event data APIs: the registered front door
+# ### 1c. Event data APIs: registration required
 #
-# The serious conflict-event APIs all want to know who you are:
+# The major conflict-event APIs all require some kind of registration:
 #
-# - **ACLED**: free academic registration → OAuth token → paginated JSON.
-#   Their license *prohibits redistributing the data*, which is why there
-#   is no ACLED file in `data/cached/` — an access-terms lesson in itself.
-#   The complete, documented pull script is
-#   `data/acquisition/get_acled.py`; run it with your own credentials
-#   tonight if you registered.
-# - **UCDP**: CC-BY licensed (we *can* and do cache it), API token free by
-#   email. Our cached extract below came from their bulk download.
+# - **ACLED**: free academic registration, then an OAuth token, then
+#   paginated JSON. Their license prohibits redistributing the data, which
+#   is why there's no ACLED file in `data/cached/` (an access-terms lesson
+#   in itself). The full pull script is `data/acquisition/get_acled.py`;
+#   run it with your own credentials tonight if you registered.
+# - **UCDP**: CC-BY licensed, so we can and do cache it; the API token is
+#   free by email. The cached extract below came from their bulk download.
 #
-# The pattern both share — authenticate, request a page, append, repeat
-# until empty, sleep between calls — is in `get_acled.py`. Read it now;
-# it's 60 lines and it is every event-data pull you will ever write.
+# Both follow the same pattern: authenticate, request a page, append, repeat
+# until the API says there's no next page, and sleep between calls. It's in
+# `get_acled.py` -- about 60 lines, and close to every event-data pull you'll
+# write.
 
 # %%
-# The cached UCDP extract: Kharkiv oblast region, May 2024 (the Vovchansk
-# offensive). 529 vetted, georeferenced, fatality-anchored events.
+# The cached UCDP extract: Kharkiv oblast, May 2024 (the Vovchansk
+# offensive). 529 vetted, georeferenced events, each anchored to a fatality count.
 ucdp = pd.read_csv(os.path.join(DATA_DIR, "ucdp_ged_kharkiv_may2024.csv"))
 print(ucdp.shape)
 ucdp[["date_start", "adm_1", "type_of_violence", "best", "source_office"]].head()
@@ -152,13 +154,13 @@ plt.show()
 # ### 2a. How collection works (Telethon)
 #
 # Telegram's MTProto API gives an authenticated client the full history of
-# any public channel. The `telethon` code below is complete and real — it
-# needs the `api_id`/`api_hash` from my.telegram.org (participant guide)
+# any public channel. The `telethon` code below is the real thing: it needs
+# the `api_id`/`api_hash` from my.telegram.org (see the participant guide)
 # and a phone-number login the first time it runs.
 
 # %%
-# OPTIONAL — live network + Telegram credentials.
-# The five public energy/infrastructure channels this lab uses — large,
+# OPTIONAL -- live network + Telegram credentials.
+# The five public energy/infrastructure channels this lab uses are large,
 # institutional, unambiguously public broadcast channels (the chapter
 # discusses why we collect channels, not chats):
 CHANNELS = ["Ukrenergo", "dtek_ua", "energoatom_ua", "dsns_telegram", "kyivoda"]
@@ -182,9 +184,9 @@ else:
     print("No TELEGRAM_API_ID in environment — skipping live collection.")
 
 # %% [markdown]
-# ### 2b. The cached channel export — read this cell, it matters
+# ### 2b. The cached channel export
 #
-# This is a *real* Telethon export: 632 posts from five public Ukrainian
+# This is a real Telethon export: 632 posts from five public Ukrainian
 # energy/infrastructure channels, May-July 2024 (the spring energy-strike
 # campaign). The five, and why each is here:
 #
@@ -196,12 +198,13 @@ else:
 #
 # `data/acquisition/get_telegram.py` shows exactly how it was pulled. Two
 # caveats before you use it. First, these are real posts by real
-# institutions — public broadcast, but still real words, so use them for
+# institutions: public broadcast, but still real words, so use them for
 # source criticism, not to profile anyone. Second, the posts are in
-# Ukrainian: the `text_en_mt` column is an English **machine translation**
-# (done by an LLM, not human-checked). It's good enough to work with and
-# wrong often enough that you should treat it as a rough guide rather than
-# ground truth — we'll come back to machine-generated labels on Day 4.
+# Ukrainian, and the `text_en_mt` column is an English **machine
+# translation** done by an LLM, not checked by a human. It's usually good
+# enough to work with, but wrong often enough that you should treat it as a
+# rough guide, not ground truth. We'll come back to machine-generated labels
+# on Day 4.
 
 # %%
 tg = pd.read_parquet(os.path.join(DATA_DIR, "telegram_infra.parquet"))
@@ -212,9 +215,9 @@ tg.sample(5, random_state=1)[["channel", "date", "text", "text_en_mt", "views", 
 # %% [markdown]
 # ### 2c. Channel ecology
 #
-# Before reading any individual post, profile the *channels*: who posts
-# how much, when, to whom? This is the metadata layer Telethon gives you
-# for free, and it's analytically rich before any NLP happens.
+# Before reading any individual post, profile the channels: who posts how
+# much, when, and to whom? This is metadata Telethon gives you for free,
+# and there's a lot you can learn from it before doing any NLP.
 
 # %%
 import matplotlib.pyplot as plt
@@ -251,12 +254,13 @@ plt.show()
 #
 # The chapter described *laundering loops*: channel A cites B, B cites A, and
 # repetition starts to look like confirmation. You won't find a clean loop
-# among these five — they're official channels, so they forward *upstream*
-# sources (the President, ministries, individual power plants), not each
-# other. The related pattern you can find: a single source that several of
-# these nominally-independent channels all relay. If a reader sees the same
-# claim carried by five official channels, it's easy to read repetition as
-# confirmation, even though it's one source amplified five times.
+# among these five, since they're official channels that forward upstream
+# sources (the President, ministries, individual power plants) rather than
+# each other. The pattern you can find here is a single source that several
+# of these nominally-independent channels all relay. When the same claim
+# shows up carried by five official channels, it's easy to read the
+# repetition as confirmation, even though it's really one source amplified
+# five times.
 
 # %%
 fwd_matrix = pd.crosstab(tg["channel"], tg["fwd_from"])
@@ -272,15 +276,15 @@ fwd_matrix
 # try it here
 
 # %% [markdown]
-# ### 2e. Source criticism, operationalized
+# ### 2e. Source criticism in practice
 #
-# Read 10 posts each (use the `text_en_mt` column) from `dtek_ua` — a
-# private utility that wants customers and investors to see it as competent
-# and in control — and from `dsns_telegram`, the State Emergency Service,
-# whose posts foreground rescue and response. For each post, ask the
-# chapter's question: what does this channel's *incentive structure* do to
-# what it reports, and to what it leaves out? Then do the exercise that
-# turns this from vibes into method:
+# Read 10 posts each (use the `text_en_mt` column) from `dtek_ua`, a private
+# utility that wants customers and investors to see it as competent and in
+# control, and from `dsns_telegram`, the State Emergency Service, whose posts
+# foreground rescue and response. For each post, ask the chapter's question:
+# what does this channel's incentive structure do to what it reports, and to
+# what it leaves out? The exercise below is how you get from vibes to
+# something you can actually count:
 
 # %%
 # Exercise: add a column `claim_type` to 15 posts of your choosing, coded
@@ -297,9 +301,9 @@ sample_posts = tg.sample(15, random_state=42).copy()
 # try it here
 
 # %% [markdown]
-# ### 2f. Store it like you mean it
+# ### 2f. Store what you collected
 #
-# Closing the loop with this afternoon's storage session: append-safe raw
+# Back to this afternoon's storage session: keep an append-safe raw copy
 # (the parquet is our "raw" here), plus a queryable SQLite copy.
 
 # %%
